@@ -1,0 +1,8 @@
+@srcdir@/include
+@srcdir@/include/uapi
+@srcdir@/arch/arm64/include
+@srcdir@/arch/arm64/include/uapi
+@builddir@/arch/arm64/include/generated
+@builddir@/arch/arm64/include/generated/uapi
+@builddir@/include/generated
+@builddir@/include/generated/uapi
