@@ -146,3 +146,9 @@ xorriso -indev stdio:$IMG -outdev stdio:"$new_img" \
 	-boot_image any replay
 
 cp -alf "$new_img" "$OUT_IMG"
+if [ -n "$POST_HOOK" ]; then
+	env \
+		KERNEL_PATH="$KERNEL_PATH" \
+		INITRAMFS_PATH="$INITRAMFS_PATH" \
+	$POST_HOOK "$OUT_IMG"
+fi

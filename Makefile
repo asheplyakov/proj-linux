@@ -111,6 +111,7 @@ iso: install propagator
 	$(ENV) \
 		KBUILD_OUTPUT='$(KBUILD_OUTPUT)' \
 		KERNEL_STAGEDIR='$(KERNEL_STAGEDIR)' \
+		POST_HOOK=`pwd`/netinstall-deploy.sh \
 		$(SHELL) iso-inject-kernel.sh \
 		$(ISO_BASE_IMG) \
 		$(ISO_STAGE2) \
