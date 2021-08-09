@@ -1,21 +1,45 @@
 #!/bin/sh
 set -e
 MYDIR="${0%/*}"
+MYNAME="${0##*/}"
 export PATH="$HOME/work/squashfs-tools/squashfs-tools:$PATH"
 IMG="${1:-/srv/export/dist/altlinux/slinux-live-9.1-aarch64.iso}"
 STAGE2="${2:-live}"
+PROPAGATOR="$3"
 
 kver=`cat $KBUILD_OUTPUT/include/config/kernel.release`
 
-IMG_SHA1=`sha1sum $IMG`
-IMG_SHA1="${IMG_SHA1%% *}"
+sha1 () {
+	local file="$1"
+	local sha1=''
+	sha1=`sha1sum "$file"`
+	sha1="${sha1%% *}"
+	echo "$sha1"
+}
+
+manifest () {
+	local ret
+	ret="$(for v in $@; do echo $v; done | sha1sum)"
+	ret="${ret%% *}"
+	echo "$ret"
+}
+
+IMG_SHA1=`sha1 $IMG`
+PROPAGATOR_SHA1=''
 
 set -x
 
+if [ -n "$PROPAGATOR" ]; then
+	if [ ! -r "$PROPAGATOR" ]; then
+		"echo *** Error: $MYNAME: no such file $PROPAGATOR"
+		exit 11
+	fi
+	PROPAGATOR_SHA1=`sha1 "$PROPAGATOR"`
+fi
+
 KERNEL_MANIFEST=`find $KERNEL_STAGEDIR -type f | xargs sha1sum | sort | sha1sum`
 KERNEL_MANIFEST="${KERNEL_MANIFEST%% *}"
-COMPLETE_MANIFEST=`( echo $IMG_SHA1; echo $KERNEL_MANIFEST ) | sha1sum`
-COMPLETE_MANIFEST="${COMPLETE_MANIFEST%% *}"
+COMPLETE_MANIFEST=`manifest $IMG_SHA1 $KERNEL_MANIFEST $PROPAGATOR_SHA1`
 
 OUT_IMG="${IMG##*/}"
 OUT_IMG="${OUT_IMG%.iso}"
@@ -59,10 +83,8 @@ rm -f "$live_orig"
 xorriso -dev stdio:$IMG -osirrox on -extract "$INITRAMFS_PATH" "$full_cz_orig"
 xorriso -dev stdio:$IMG -osirrox on -extract "/${STAGE2}" "$live_orig"
 
-SHA1=`sha1sum "$live_orig"`
-SHA1="${SHA1%% *}"
-MANIFEST=`( echo $SHA1; echo $KERNEL_MANIFEST ) | sha1sum`
-MANIFEST="${MANIFEST%% *}"
+SHA1=`sha1 "$live_orig"`
+MANIFEST=`manifest $SHA1 $KERNEL_MANIFEST`
 
 if [ -f "$HOME/.cache/altiso/${MANIFEST}.live" ]; then
 	live="$HOME/.cache/altiso/${MANIFEST}.live"
@@ -89,10 +111,8 @@ else
 	rm -f "$fake_db"
 fi
 
-initramfs_sha1="`sha1sum $full_cz_orig`"
-initramfs_sha1="${initramfs_sha1%% *}"
-FULL_CZ_MANIFEST=`( echo $initramfs_sha1; echo $KERNEL_MANIFEST ) | sha1sum`
-FULL_CZ_MANIFEST="${FULL_CZ_MANIFEST%% *}"
+initramfs_sha1="`sha1 $full_cz_orig`"
+FULL_CZ_MANIFEST=`manifest $initramfs_sha1 $KERNEL_MANIFEST $PROPAGATOR_SHA1`
 echo "FULL_CZ_MANIFEST: ${FULL_CZ_MANIFEST}"
 
 full_cz="$HOME/.cache/altiso/${FULL_CZ_MANIFEST}.full.cz"
@@ -109,6 +129,11 @@ if [ ! -f "$full_cz" ]; then
 			cpio -id --no-absolute-filenames; do :; done
 	cd "$olddir"
 	fakeroot -i "$fake_db" -s "$fake_db" rsync -avcH --delete "${KERNEL_STAGEDIR}/lib/modules/" "$propagator_initramfs/lib/modules/"
+	if [ -n "$PROPAGATOR" ]; then
+		fakeroot -i "$fake_db" -s "$fake_db" cp -a $PROPAGATOR "$propagator_initramfs"/sbin/init-bin
+		fakeroot -i "$fake_db" -s "$fake_db" chown root:root "$propagator_initramfs"/sbin/init-bin
+		fakeroot -i "$fake_db" -s "$fake_db" chmod 755 "$propagator_initramfs"/sbin/init-bin
+	fi
 	fakeroot -i "$fake_db" -- /bin/sh -c "cd $propagator_initramfs && find . | cpio -Hnewc --create" | pigz --stdout > "${full_cz}.tmp"
 	mv "${full_cz}.tmp" "${full_cz}"
 	rm -f "$fake_db"

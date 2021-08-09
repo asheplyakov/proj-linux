@@ -14,6 +14,7 @@ KBUILD_OUTPUT := /tmp/build/$(BRANCH)
 KERNEL_STAGEDIR := /tmp/inst/$(BRANCH)
 ISO_BASE_IMG := /srv/export/dist/altlinux/alt-p9-jeos-systemd-20210802-aarch64.iso
 ISO_STAGE2 := altinst
+ISO_REPLACE_PROPAGATOR := yes
 
 COMMON_ENV := KBUILD_OUTPUT='$(KBUILD_OUTPUT)' KBUILD_BUILD_TIMESTAMP=yyyyyyyyyyyyyyyyyyyyyyyyyyyyy DISTCC_BACKOFF_PERIOD=0
 # Use distcc only (without ccache).
@@ -89,14 +90,31 @@ clean:
 		ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) \
 	clean
 
+.PHONY: propagator
+
+ifeq ($(strip $(ISO_REPLACE_PROPAGATOR)),)
+propagator:
+
+else
+PROPAGATOR := ../propagator/init
+propagator:
+	$(ENV) \
+		$(MAKE) -C "$(dir $(PROPAGATOR))" clean
+	$(ENV) \
+		$(MAKE) -C "$(dir $(PROPAGATOR))" \
+		WITH_SHELL=1 WITH_CIFS=1 \
+		ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE)
+endif
+
 .PHONY: iso
-iso: install
+iso: install propagator
 	$(ENV) \
 		KBUILD_OUTPUT='$(KBUILD_OUTPUT)' \
 		KERNEL_STAGEDIR='$(KERNEL_STAGEDIR)' \
 		$(SHELL) iso-inject-kernel.sh \
 		$(ISO_BASE_IMG) \
-		$(ISO_STAGE2)
+		$(ISO_STAGE2) \
+		$(PROPAGATOR)
 
 
 .PHONY: printvars
