@@ -65,24 +65,6 @@ install: kernel
 		install modules_install
 	depmod -b '$(KERNEL_STAGEDIR)' `cat $(KBUILD_OUTPUT)/include/config/kernel.release`
 
-
-.PHONY: tarball
-tarball: install
-	kver=`cat $(KBUILD_OUTPUT)/include/config/kernel.release`; \
-	if grep -q -e 'CONFIG_MODULE_COMPRESS=y' $(KBUILD_OUTPUT)/.config; then Z=''; else Z='z'; fi; \
-	tarball=linux-$$kver-$(ARCH).tgz; \
-	if [ x"$Z" = x ]; then tarball=linux-$$kver-$(ARCH).tar; fi; \
-	fakeroot tar "c${Z}vf" $$tarball -C '$(KERNEL_STAGEDIR)' \
-	boot/vmlinuz-$$kver \
-	boot/config-$$kver \
-	boot/System.map-$$kver \
-	lib/modules/$$kver && echo $$tarball
-
-.PHONY: deploy
-deploy: tarball
-	ansible-playbook -i hosts -e enable_initramfs=$(ENABLE_INITRAMFS) deploy.yml
-
-
 .PHONY: clean
 clean:
 	rm -rf $(KERNEL_STAGEDIR)
@@ -117,6 +99,30 @@ iso: install propagator
 		$(ISO_STAGE2) \
 		$(PROPAGATOR)
 
+
+.PHONY: tarball
+tarball: install
+	kver=`cat $(KBUILD_OUTPUT)/include/config/kernel.release`; \
+	if grep -q -e 'CONFIG_MODULE_COMPRESS(_[^=]+)*[=]y' '$(KBUILD_OUTPUT)/.config'; then Z=''; else Z='z'; fi; \
+	tarball="linux-$$kver-$(ARCH).tgz"; \
+	if [ x"$Z" = x ]; then tarball="linux-$$kver-$(ARCH).tar"; fi; \
+	fakeroot tar "c${Z}vf" $$tarball -C '$(KERNEL_STAGEDIR)' \
+	boot/vmlinuz-$$kver \
+	boot/config-$$kver \
+	boot/System.map-$$kver \
+	lib/modules/$$kver && echo $$tarball
+
+.PHONY: deploy2hd
+deploy2hd: tarball
+	kver=`cat $(KBUILD_OUTPUT)/include/config/kernel.release`; \
+	if grep -q -e 'CONFIG_MODULE_COMPRESS(_[^=]+)*[=]y' '$(KBUILD_OUTPUT)/.config'; then Z=''; else Z='z'; fi; \
+	tarball="linux-$$kver-$(ARCH).tgz"; \
+	if [ x"$Z" = x ]; then tarball="linux-$$kver-$(ARCH).tar"; fi; \
+	ansible-playbook -i hosts \
+		-e KBUILD_OUTPUT='$(KBUILD_OUTPUT)' \
+		-e kernel_version="$$kver" \
+		-e kernel_tarball="$$tarball" \
+		deploy2hd.yml
 
 .PHONY: printvars
 printvars:
