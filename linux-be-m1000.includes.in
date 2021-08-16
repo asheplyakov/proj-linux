@@ -6,3 +6,6 @@
 @builddir@/arch/arm64/include/generated/uapi
 @builddir@/include/generated
 @builddir@/include/generated/uapi
+@builddir@/include
+@builddir@/arch/arm64/include
+@builddir@/arch/arm64/include/uapi
