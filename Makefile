@@ -42,6 +42,14 @@ $(KBUILD_OUTPUT)/.config: $(SRCDIR)/arch/$(ARCH)/configs/$(DEFCONFIG)
 		ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) \
 	$(DEFCONFIG)
 
+
+.PHONY: prepare
+
+prepare: $(KBUILD_OUTPUT)/.config
+	$(ENV) $(MAKE) -C $(SRCDIR) \
+		ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) \
+		prepare
+
 .PHONY: menuconfig
 menuconfig: $(KBUILD_OUTPUT)/.config
 	$(ENV) $(MAKE) -C $(SRCDIR) \
