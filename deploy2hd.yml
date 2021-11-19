@@ -17,6 +17,7 @@
         findmnt --noheadings -o SOURCE,UUID -M {{ remote_root|default('/') }}
       register: remote_root_findmnt
       when: remote_root_device is undefined
+      changed_when: False
 
     - set_fact:
         remote_root_id: "{{ remote_root_device }}"
@@ -26,78 +27,140 @@
       when:
         - remote_root_device is undefined
 
-    - name: ensure efibootmgr is installed
-      package: name=efibootmgr state=present
-      when:
-        - ansible_connection != 'local'
-        - ansible_connection != 'chroot'
-
-    - name: check if firmware will boot grub
-      shell: >
-        efibootmgr -v | grep -q grub
+    - name: check if the system supports UEFI
+      stat:
+        path: /sys/firmware/efi
+      register: sys_firmware_efi_stat
       failed_when: False
-      register: grub_in_nvram
-      when:
-        - ansible_connection != 'local'
-        - ansible_connection != 'chroot'
+      changed_when: False
 
-    - name: re-install grub
-      command: grub-install
-      when:
-        - grub_in_nvram.rc != 0
-        - ansible_connection != 'local'
-        - ansible_connection != 'chroot'
+    - name: check if the system is Armbian
+      stat:
+        path: /etc/armbian-release
+      register: etc_armbian_stat
+      failed_when: False
+      changed_when: False
 
-    - name: install dracut
-      package: name=dracut state=present
-      when:
-        - ansible_connection != 'local'
-        - ansible_connection != 'chroot'
-
-    - name: create initramfs
+    - name: check if this is BE-M1000
       command: >
-        dracut --force --kver "{{ kernel_version }}" "/boot/initrd-{{ kernel_version }}.img"
+        cat /sys/firmware/devicetree/base/compatible
+      register: of_root_compatible
+      failed_when: False
+      changed_when: False
+
+    - set_fact:
+        is_baikalm: "{{ of_root_compatible.stdout.strip() == 'baikal,baikal-m' }}"
+
+    - debug: var=of_root_compatible
+
+    - set_fact:
+        is_armbian: "{{ etc_armbian_stat.stat.exists }}"
+        uefi_supported: "{{ sys_firmware_efi_stat.stat.exists }}"
+
+    - set_fact:
+        initramfs_generator: dracut
       when:
+        - initramfs_generator is undefined
+        - uefi_supported
+
+    - set_fact:
+        initramfs_generator: initramfs_tools
+      when:
+        - initramfs_generator is undefined
+        - not(uefi_supported)
+        - ansible_os_family == 'Debian'
+
+    - name: create initramfs with initramfs-tools
+      command: >
+        update-initramfs -c -k {{ kernel_version }}
+      when: initramfs_generator == 'initramfs_tools'
+
+    - block:
+        - name: ensure dracut is installed
+          package: name=dracut state=present
+
+        - name: create initramfs with dracut
+          command: >
+            dracut --force --kver "{{ kernel_version }}" "/boot/initrd-{{ kernel_version }}.img"
+      when:
+        - initramfs_generator == 'dracut'
+        - ansible_connection != 'local'
+
+    - block:
+        - name: ensure efibootmgr is installed
+          package: name=efibootmgr state=present
+
+        - name: check if firmware will boot grub
+          shell: >
+            efibootmgr -v | grep -q grub
+          failed_when: False
+          register: grub_in_nvram
+
+        - name: re-install grub
+          command: grub-install
+          when:
+            - grub_in_nvram.rc != 0
+
+        - name: regenerate GRUB config
+          command: update-grub
+
+        - name: set new kernel as GRUB default
+          command: >
+            grub-set-default "gnulinux-{{ kernel_version }}-advanced-{{ remote_root_id }}"
+      when:
+        - uefi_supported
         - ansible_connection != 'local'
         - ansible_connection != 'chroot'
 
     - block:
-      - name: set kernel command line, part 1
-        lineinfile:
-          path: /etc/sysconfig/grub2
-          regexp: '^GRUB_CMDLINE_LINUX_DEFAULT[=]'
-          line: "GRUB_CMDLINE_LINUX_DEFAULT='{{ kernel_cmdline }}'"
+        - name: update dtbs symlink
+          file:
+            path: /boot/dtb
+            state: link
+            src: "dtbs/{{ kernel_version }}"
+            owner: root
+            group: root
 
-      - name: set kernel command line, part 2
-        lineinfile:
-          path: /etc/sysconfig/grub2
-          regexp: '^GRUB_CMDLINE_LINUX[=]'
-          line: "GRUB_CMDLINE_LINUX='{{ kernel_cmdline }}'"
-
-      - name: regenerate GRUB config
-        command: update-grub
-
-      - name: set new kernel as GRUB default
-        command: >
-          grub-set-default "gnulinux-{{ kernel_version }}-advanced-{{ remote_root_id }}"
-      vars:
-        kernel_cmdline: 'console=ttyS0,115200n8 ignore_loglevel audit=0 earlycon=uart8250,mmio32,0x20230000'
-
-
-    - name: force all notified handlers to run
-      meta: flush_handlers
-
-    - name: reboot the box
-      reboot:
-        reboot_timeout: 300
+        - name: update Image symlink
+          file:
+            path: /boot/Image
+            state: link
+            src: "vmlinuz-{{ kernel_version }}"
+            owner: root
+            group: root
       when:
         - ansible_connection != 'local'
-        - ansible_connection != 'chroot'
+        - is_armbian
+        - not(uefi_supported)
 
-    - name: verify if the box runs deployed kernel
-      command: uname -r
-      register: uname_r
-      failed_when: uname_r.rc !=0 or uname_r.stdout.strip() != kernel_version
+    - block:
+        - name: set kernel command line, part 1
+          lineinfile:
+            path: /etc/sysconfig/grub2
+            regexp: '^GRUB_CMDLINE_LINUX_DEFAULT[=]'
+            line: "GRUB_CMDLINE_LINUX_DEFAULT='{{ kernel_cmdline }}'"
+
+        - name: set kernel command line, part 2
+          lineinfile:
+            path: /etc/sysconfig/grub2
+            regexp: '^GRUB_CMDLINE_LINUX[=]'
+            line: "GRUB_CMDLINE_LINUX='{{ kernel_cmdline }}'"
+      vars:
+        kernel_cmdline: 'console=ttyS0,115200n8 ignore_loglevel audit=0 earlycon=uart8250,mmio32,0x20230000'
+      when: is_baikalm
+
+    - block:
+        - name: force all notified handlers to run
+          meta: flush_handlers
+
+        - name: reboot the box
+          reboot:
+            reboot_timeout: 300
+
+        - name: verify if the box runs the deployed kernel
+          command: uname -r
+          register: uname_r
+          failed_when: uname_r.rc !=0 or uname_r.stdout.strip() != kernel_version
       when:
         - ansible_connection != 'local'
         - ansible_connection != 'chroot'

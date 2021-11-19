@@ -1,0 +1,4 @@
+[arm64]
+asheplyakov-tf307 ansible_user=root
+edelweiss ansible_user=root
+asheplyakov-rockpi4c ansible_user=root

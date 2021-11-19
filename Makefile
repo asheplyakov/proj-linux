@@ -60,7 +60,7 @@ menuconfig: $(KBUILD_OUTPUT)/.config
 kernel: $(KBUILD_OUTPUT)/.config
 	$(ENV) $(MAKE) -C $(SRCDIR) \
 		ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) \
-		all
+		all dtbs
 
 .PHONY: install
 install: kernel
@@ -70,7 +70,7 @@ install: kernel
 		ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) \
 		INSTALL_PATH=$(KERNEL_STAGEDIR)/boot \
 		INSTALL_MOD_PATH=$(KERNEL_STAGEDIR) \
-		install modules_install
+		install modules_install dtbs_install
 	depmod -b '$(KERNEL_STAGEDIR)' `cat $(KBUILD_OUTPUT)/include/config/kernel.release`
 
 .PHONY: clean
@@ -118,6 +118,7 @@ tarball: install
 	boot/vmlinuz-$$kver \
 	boot/config-$$kver \
 	boot/System.map-$$kver \
+	boot/dtbs/$$kver \
 	lib/modules/$$kver && echo $$tarball
 
 .PHONY: deploy2hd
