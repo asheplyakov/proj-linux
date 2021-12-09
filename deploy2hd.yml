@@ -4,17 +4,31 @@
   tasks:
     - debug: var=kernel_version
     - debug: var=kernel_tarball
+
+    - name: set target rootfs location
+      set_fact:
+        target_root: /
+      when:
+        - target_root is undefined
+        - ansible_connection != 'local'
+
+    - fail:
+        msg: target_root should be defined for localhost
+      when:
+        - ansible_connection == 'local'
+        - target_root is undefined
+
     - name: unpack kernel tarball
       unarchive:
         src: "{{ kernel_tarball }}"
-        dest: "{{ remote_root|default('/') }}"
+        dest: "{{ target_root }}"
     - name: run depmod
       command: >
-        depmod -a {{ kernel_version }}
+        depmod -a {{ kernel_version }} -b {{ target_root }}
 
     - name: figure out remote root device
       command: >
-        findmnt --noheadings -o SOURCE,UUID -M {{ remote_root|default('/') }}
+        findmnt --noheadings -o SOURCE,UUID -M {{ target_root }}
       register: remote_root_findmnt
       when: remote_root_device is undefined
       changed_when: False
@@ -41,7 +55,7 @@
       failed_when: False
       changed_when: False
 
-    - name: check if this is BE-M1000
+    - name: check device type in dtb
       command: >
         cat /sys/firmware/devicetree/base/compatible
       register: of_root_compatible
@@ -49,7 +63,9 @@
       changed_when: False
 
     - set_fact:
-        is_baikalm: "{{ of_root_compatible.stdout.strip() == 'baikal,baikal-m' }}"
+        is_baikalm: "{{ of_root_compatible.stdout.strip().startswith('baikal,baikal-m') }}"
+        is_rpi4: "{{ of_root_compatible.stdout.strip().startswith('raspberrypi,4-model') }}"
+        is_rockpi4: "{{ of_root_compatible.stdout.strip().startswith('radxa,rockpi4') }}"
 
     - debug: var=of_root_compatible
 
@@ -57,11 +73,46 @@
         is_armbian: "{{ etc_armbian_stat.stat.exists }}"
         uefi_supported: "{{ sys_firmware_efi_stat.stat.exists }}"
 
+    - block:
+        - name: check if /boot/config.txt exists
+          stat:
+            path: "{{ target_root }}/boot/config.txt"
+          register: stat_boot_config_txt
+
+        - name: check if /boot/efi/config.txt exists
+          stat:
+            path: "{{ target_root }}/boot/efi/config.txt"
+          register: stat_boot_efi_config_txt
+
+        - set_fact:
+           rpi_boot_dir: "{{ target_root }}/boot"
+          when:
+            - stat_boot_config_txt.stat.exists|bool
+
+        - set_fact:
+            rpi_boot_dir: "{{ target_root }}/boot/efi"
+          when:
+            - stat_boot_efi_config_txt.stat.exists|bool
+
+        - fail:
+            msg: "could not find /boot/config.txt on rpi"
+          when:
+            - rpi_boot_dir is undefined
+      when:
+        - is_rpi4
+
     - set_fact:
         initramfs_generator: dracut
       when:
         - initramfs_generator is undefined
         - uefi_supported
+
+    - set_fact:
+        initramfs_generator: dracut
+      when:
+        - initramfs_generator is undefined
+        - is_rpi4
+        - ansible_os_family != 'Debian'
 
     - set_fact:
         initramfs_generator: initramfs_tools
@@ -73,7 +124,9 @@
     - name: create initramfs with initramfs-tools
       command: >
         update-initramfs -c -k {{ kernel_version }}
-      when: initramfs_generator == 'initramfs_tools'
+      when: 
+        - initramfs_generator == 'initramfs_tools'
+        - ansible_connection != 'local'
 
     - block:
         - name: ensure dracut is installed
@@ -115,7 +168,7 @@
     - block:
         - name: update dtbs symlink
           file:
-            path: /boot/dtb
+            path: "{{ target_root }}/boot/dtb"
             state: link
             src: "dtbs/{{ kernel_version }}"
             owner: root
@@ -123,31 +176,81 @@
 
         - name: update Image symlink
           file:
-            path: /boot/Image
+            path: "{{ target_root }}/boot/Image"
             state: link
             src: "vmlinuz-{{ kernel_version }}"
             owner: root
             group: root
       when:
-        - ansible_connection != 'local'
         - is_armbian
         - not(uefi_supported)
 
     - block:
-        - name: set kernel command line, part 1
+        - name: copy kernel to raspberry pi boot partition
+          copy:
+            src: "{{ target_root }}/boot/vmlinuz-{{ kernel_version }}"
+            dest: "{{ rpi_boot_dir }}/vmlinuz"
+            remote_src: true
+        - name: copy initramfs to raspberry pi boot partition
+          copy:
+            src: "{{ target_root }}/boot/initrd-{{ kernel_version }}.img"
+            dest: "{{ rpi_boot_dir }}/initrd.img"
+            remote_src: true
+        - name: ensure boot/overlays directory exists
+          file:
+            path: "{{ rpi_boot_dir }}/overlays"
+            state: directory
+        - name: copy rpi dtbs to boot partition
+          shell: >
+            cp -a {{ target_root }}/boot/dtbs/{{ kernel_version }}/broadcom/*.dtb {{ rpi_boot_dir }}/
+        - name: copy rpi overlays to boot partition
+          shell: >
+            cp -a {{ target_root }}/boot/dtbs/{{ kernel_version }}/overlays/*.dtbo {{ rpi_boot_dir }}/overlays/
+      when: 
+        - is_rpi4
+        - not(is_armbian)
+        - not(uefi_supported)
+
+    - name: figure out kernel command line for BE-M1000 boards
+      set_fact:
+        kernel_cmdline: 'console=ttyS0,115200n8 ignore_loglevel audit=0 earlycon=uart8250,mmio32,0x20230000'
+      when:
+        - is_baikalm
+
+    - name: figure out kernel command line for raspberrypi pi 4
+      set_fact:
+        kernel_cmdline: 'console=ttyS0,115200n8 ignore_loglevel audit=0 earlycon=uart8250,mmio32,0xfe215040'
+      when:
+        - is_rpi4
+
+    - block:
+        - name: set kernel command line via grub, part 1
           lineinfile:
             path: /etc/sysconfig/grub2
             regexp: '^GRUB_CMDLINE_LINUX_DEFAULT[=]'
             line: "GRUB_CMDLINE_LINUX_DEFAULT='{{ kernel_cmdline }}'"
+          notify: update grub
 
-        - name: set kernel command line, part 2
+        - name: set kernel command line via grub, part 2
           lineinfile:
             path: /etc/sysconfig/grub2
             regexp: '^GRUB_CMDLINE_LINUX[=]'
             line: "GRUB_CMDLINE_LINUX='{{ kernel_cmdline }}'"
-      vars:
-        kernel_cmdline: 'console=ttyS0,115200n8 ignore_loglevel audit=0 earlycon=uart8250,mmio32,0x20230000'
-      when: is_baikalm
+          notify: update grub
+      when: 
+        - uefi_supported
+        - kernel_cmdline is defined
+
+    - block:
+        - name: set kernel command line for raspberry pi
+          lineinfile:
+            dest: "{{ rpi_boot_dir }}/cmdline.txt"
+            line: "root=UUID={{ remote_root_id }} ro {{ kernel_cmdline }}"
+            regexp: ".*"
+            create: yes
+      when:
+        - is_rpi4
+        - kernel_cmdline is defined
 
     - block:
         - name: force all notified handlers to run
@@ -168,3 +271,5 @@
   handlers:
     - name: run ldconfig
       command: ldconfig
+    - name: update grub
+      command: update-grub
