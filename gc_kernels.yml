@@ -27,6 +27,13 @@
       register: lib_modules_subdirs
       changed_when: False
 
+    - name: find initramfs images
+      command: >
+        find {{ target_root }}/boot -xdev -type f -not -name "*{{ uname_r.stdout.strip() }}*" -and \( -name 'initrd*' -or -name 'uInitrd*' \)
+      failed_when: False
+      changed_when: False
+      register: initramfs_images
+
     - name: query /lib/modules subdirs in rpm
       command: >
         rpm -q --whatprovides "{{ item }}"
@@ -45,26 +52,22 @@
       loop: "{{ lib_modules_subdirs.stdout_lines }}"
       register: dpkg_query_lib_modules_subdirs
 
-    - debug: var=rpm_query_lib_modules_subdirs
-    - debug: var=dpkg_query_lib_modules_subdirs
+    - set_fact:
+        installed_kernels: "{{ dpkg_query_lib_modules_subdirs.results|selectattr('rc', 'eq', 0)|map(attribute='item')|map('basename')|list }}"
+      when: ansible_pkg_mgr == 'apt'
 
-    - name: print kernels installed from packages on rpm systems
-      debug:
-        msg: "{{ item.stdout }}"
-      when: 
-        - ansible_pkg_mgr != 'apt'
-      loop: "{{ rpm_query_lib_modules_subdirs.results|selectattr('rc', 'eq', 0) }}"
-      loop_control:
-        label: "{{ item.item|basename }}"
+    - set_fact:
+        installed_kernels: "{{ rpm_query_lib_modules_subdirs.results|selectattr('rc', 'eq', 0)|map(attribute='item')|map('basename')|list }}"
+      when: ansible_pkg_mgr != 'apt'
 
-    - name: print kernels installed from packages on dpkg systems
+    - set_fact:
+        running_kernel: 
+          - "{{ uname_r.stdout.strip() }}"
+
+    - name: print kernels installed from packages
       debug:
-        msg: "{{ item.stdout }}"
-      when: 
-        - ansible_pkg_mgr == 'apt'
-      loop: "{{ dpkg_query_lib_modules_subdirs.results|selectattr('rc', 'eq', 0) }}"
-      loop_control:
-        label: "{{ item.item|basename }}"
+        msg: "{{ item }}"
+      loop: "{{ installed_kernels }}"
 
     - name: remove stray kernels on rpm systems
       command: >
@@ -97,6 +100,15 @@
       loop: "{{ dpkg_query_lib_modules_subdirs.results|selectattr('rc', 'ne', 0) }}"
       loop_control:
         label: "{{ item.item|basename }}"
+
+    - name: remove stray initrd images
+      command: >
+        rm -f "{{ item }}"
+      when:
+        - item|basename|regex_replace('^((initrd)|(initrd\.img)|(uInitrd))[-]', '')|regex_replace('\.img$', '') not in installed_kernels + running_kernel
+      loop: "{{ initramfs_images.stdout_lines }}"
+      loop_control:
+        label: "{{ item|basename }}"
 
     - name: check if the system supports UEFI
       stat:
