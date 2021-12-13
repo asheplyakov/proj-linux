@@ -1,0 +1,111 @@
+---
+# removes development kernels except the running one
+
+- hosts: arm64
+  tasks:
+    - name: set target rootfs location
+      set_fact:
+        target_root: /
+      when:
+        - target_root is undefined
+        - ansible_connection != 'local'
+
+    - fail:
+        msg: target_root should ne defined for localhost
+      when:
+        - ansible_connection == 'localhost'
+        - target_root is undefined
+
+    - name: find out running kernel version
+      command: uname -r
+      register: uname_r
+      changed_when: False
+
+    - name: find kernel modules in /lib/modules
+      command: >
+        find {{ target_root }}/lib/modules -mindepth 1 -maxdepth 1 -type d -not -name "{{ uname_r.stdout.strip() }}"
+      register: lib_modules_subdirs
+      changed_when: False
+
+    - name: query /lib/modules subdirs in rpm
+      command: >
+        rpm -q --whatprovides "{{ item }}"
+      when: ansible_pkg_mgr != 'apt'
+      failed_when: False
+      changed_when: False
+      loop: "{{ lib_modules_subdirs.stdout_lines }}"
+      register: rpm_query_lib_modules_subdirs
+
+    - name: query /lib/modules subdirs in dpkg
+      command: >
+        dpkg -S "{{ item }}/"
+      when: ansible_pkg_mgr == 'apt'
+      failed_when: False
+      changed_when: False
+      loop: "{{ lib_modules_subdirs.stdout_lines }}"
+      register: dpkg_query_lib_modules_subdirs
+
+    - debug: var=rpm_query_lib_modules_subdirs
+    - debug: var=dpkg_query_lib_modules_subdirs
+
+    - name: print kernels installed from packages on rpm systems
+      debug:
+        msg: "{{ item.stdout }}"
+      when: 
+        - ansible_pkg_mgr != 'apt'
+      loop: "{{ rpm_query_lib_modules_subdirs.results|selectattr('rc', 'eq', 0) }}"
+      loop_control:
+        label: "{{ item.item|basename }}"
+
+    - name: print kernels installed from packages on dpkg systems
+      debug:
+        msg: "{{ item.stdout }}"
+      when: 
+        - ansible_pkg_mgr == 'apt'
+      loop: "{{ dpkg_query_lib_modules_subdirs.results|selectattr('rc', 'eq', 0) }}"
+      loop_control:
+        label: "{{ item.item|basename }}"
+
+    - name: remove stray kernels on rpm systems
+      command: >
+        rm -rf "/lib/modules/{{ item.item|basename }}/"
+          "/boot/vmlinuz-{{ item.item|basename }}"
+          "/boot/initrd-{{ item.item|basename }}.img"
+          "/boot/config-{{ item.item|basename }}"
+          "/boot/System.map-{{ item.item|basename }}"
+          "/boot/dtbs/{{ item.item|basename }}/"
+      when:
+        - ansible_pkg_mgr != 'apt'
+      notify: update grub
+      loop: "{{ rpm_query_lib_modules_subdirs.results|selectattr('rc', 'ne', 0) }}"
+      loop_control:
+        label: "{{ item.item|basename }}"
+
+    - name: remove stray kernels on Debian systems
+      command: >
+        rm -rf "/lib/modules/{{ item.item|basename }}/"
+          "/boot/vmlinuz-{{ item.item|basename }}"
+          "/boot/initrd-{{ item.item|basename }}.img"
+          "/boot/initrd.img-{{ item.item|basename }}"
+          "/boot/uInitrd-{{ item.item|basename }}"
+          "/boot/config-{{ item.item|basename }}"
+          "/boot/System.map-{{ item.item|basename }}"
+          "/boot/dtbs/{{ item.item|basename }}/"
+      when:
+        - ansible_pkg_mgr == 'apt'
+      notify: update grub
+      loop: "{{ dpkg_query_lib_modules_subdirs.results|selectattr('rc', 'ne', 0) }}"
+      loop_control:
+        label: "{{ item.item|basename }}"
+
+    - name: check if the system supports UEFI
+      stat:
+        path: /sys/firmware/efi
+      register: sys_firmware_efi_stat
+      changed_when: False
+      failed_when: False
+
+  handlers:
+    - name: update grub
+      command: update-grub
+      when: sys_firmware_efi_stat.stat.exists
