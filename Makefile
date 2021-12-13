@@ -123,10 +123,11 @@ tarball: install
 
 .PHONY: deploy2hd
 deploy2hd: tarball
-	kver=`cat $(KBUILD_OUTPUT)/include/config/kernel.release`; \
+	@kver=`cat $(KBUILD_OUTPUT)/include/config/kernel.release`; \
 	if grep -q -e 'CONFIG_MODULE_COMPRESS(_[^=]+)*[=]y' '$(KBUILD_OUTPUT)/.config'; then Z=''; else Z='z'; fi; \
 	tarball="linux-$$kver-$(ARCH).tgz"; \
 	if [ x"$Z" = x ]; then tarball="linux-$$kver-$(ARCH).tar"; fi; \
+	echo "ansible-playbook -i hosts -e KBUILD_OUTPUT='$(KBUILD_OUTPUT)' -e kernel_version=\'$$kver\' -e kernel_tarball=\'$$tarball' deploy2hd"; \
 	ansible-playbook -i hosts \
 		-e KBUILD_OUTPUT='$(KBUILD_OUTPUT)' \
 		-e kernel_version="$$kver" \
