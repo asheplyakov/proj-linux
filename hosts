@@ -1,4 +1,8 @@
 [arm64]
 asheplyakov-tf307 ansible_user=root
-edelweiss ansible_user=root
+asheplyakov-edelweiss ansible_user=root
 asheplyakov-rockpi4c ansible_user=root
+asheplyakov-rpi4b ansible_user=root
+
+[armhf]
+asheplyakov-odroidxu4 ansible_user=root
