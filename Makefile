@@ -140,3 +140,4 @@ printvars:
 	echo 'KBUILD_OUTPUT=$(KBUILD_OUTPUT);'
 	echo 'KERNEL_STAGEDIR=$(KERNEL_STAGEDIR);'
 	echo 'SRCDIR=$(SRCDIR);'
+	echo 'ARCH=$(ARCH);'

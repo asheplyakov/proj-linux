@@ -22,10 +22,15 @@ cp_if_differs () {
 	fi
 }
 
-list_sources arm arm64 | sort -u > "${fileslist}"
+src_arches="${ARCH}"
+if [ "$src_arches" = 'arm64' ]; then
+	src_arches='arm arm64'
+fi
+list_sources $src_arches | sort -u > "${fileslist}"
 sed -re "s;^(.+)\$;${SRCDIR}/\\1;" -i "${fileslist}"
 sed -re "s;@srcdir@;${SRCDIR};" \
 	-e "s;@builddir@;${KBUILD_OUTPUT};" \
+	-e "s;@arch@;${ARCH:-arm64};" \
 	linux-be-m1000.includes.in > linux-${BRANCH}.includes.tmp
 mv linux-${BRANCH}.includes.tmp linux-${BRANCH}.includes
 for p in cflags config creator; do

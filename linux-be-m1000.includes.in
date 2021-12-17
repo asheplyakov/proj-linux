@@ -1,11 +1,11 @@
 @srcdir@/include
 @srcdir@/include/uapi
-@srcdir@/arch/arm64/include
-@srcdir@/arch/arm64/include/uapi
-@builddir@/arch/arm64/include/generated
-@builddir@/arch/arm64/include/generated/uapi
+@srcdir@/arch/@arch@/include
+@srcdir@/arch/@arch@/include/uapi
+@builddir@/arch/@arch@/include/generated
+@builddir@/arch/@arch@/include/generated/uapi
 @builddir@/include/generated
 @builddir@/include/generated/uapi
 @builddir@/include
-@builddir@/arch/arm64/include
-@builddir@/arch/arm64/include/uapi
+@builddir@/arch/@arch@/include
+@builddir@/arch/@arch@/include/uapi
