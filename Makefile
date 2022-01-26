@@ -6,8 +6,8 @@ EXTRA_CONFIGS ?= config-modules
 CROSS_COMPILE := aarch64-linux-gnu-
 DEFCONFIG := baikal_minimal_defconfig
 ENABLE_INITRAMFS ?= auto
-PATH_distcc := /usr/lib/distcc:/usr/bin:/bin:/sbin:/usr/sbin
-PATH_ccache := /usr/lib/ccache:/usr/bin:/bin:/sbin:/usr/sbin
+PATH_distcc := /usr/local/lib/distcc:/usr/bin:/bin:/sbin:/usr/sbin
+PATH_ccache := /usr/local/lib/ccache:/usr/bin:/bin:/sbin:/usr/sbin
 PATH_plain := /usr/bin:/bin:/sbin:/usr/sbin
 SRCDIR := ../linux-$(BRANCH)
 KBUILD_OUTPUT := /tmp/build/$(BRANCH)
@@ -16,7 +16,7 @@ ISO_BASE_IMG := /srv/export/dist/altlinux/alt-p9-jeos-systemd-20210802-aarch64.i
 ISO_STAGE2 := altinst
 ISO_REPLACE_PROPAGATOR := yes
 
-COMMON_ENV := KBUILD_OUTPUT='$(KBUILD_OUTPUT)' KBUILD_BUILD_TIMESTAMP=yyyyyyyyyyyyyyyyyyyyyyyyyyyyy DISTCC_BACKOFF_PERIOD=0
+COMMON_ENV := KBUILD_OUTPUT='$(KBUILD_OUTPUT)' KBUILD_BUILD_TIMESTAMP=yyyyyyyyyyyyyyyyyyyyyyyyyyyyy DISTCC_BACKOFF_PERIOD=0 DISTCC_FALLBACK=0
 # Use distcc only (without ccache).
 # Note: compilation nodes must be defined in ~/.distcc/hosts
 ENV := env PATH='$(PATH_distcc)' $(COMMON_ENV)
