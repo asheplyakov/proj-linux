@@ -1,5 +1,5 @@
 
-BRANCH := baikalm-5.13.y
+BRANCH := baikalm
 ARCH := arm64
 ALTARCH := aarch64
 EXTRA_CONFIGS ?= config-modules
