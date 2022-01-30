@@ -111,6 +111,7 @@ iso: install propagator
 .PHONY: tarball
 tarball: install
 	kver=`cat $(KBUILD_OUTPUT)/include/config/kernel.release`; \
+	if test -d $(KBUILD_OUTPUT)/$(ARCH)/boot/dts; then DTS_DIR="boot/dtbs/$$kver"; fi; \
 	if grep -q -e 'CONFIG_MODULE_COMPRESS(_[^=]+)*[=]y' '$(KBUILD_OUTPUT)/.config'; then Z=''; else Z='z'; fi; \
 	tarball="linux-$$kver-$(ARCH).tgz"; \
 	if [ x"$Z" = x ]; then tarball="linux-$$kver-$(ARCH).tar"; fi; \
@@ -118,7 +119,7 @@ tarball: install
 	boot/vmlinuz-$$kver \
 	boot/config-$$kver \
 	boot/System.map-$$kver \
-	boot/dtbs/$$kver \
+	$$DTS_DIR \
 	lib/modules/$$kver && echo $$tarball
 
 .PHONY: deploy2hd
