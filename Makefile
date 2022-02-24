@@ -16,7 +16,7 @@ ISO_BASE_IMG := /srv/export/dist/altlinux/alt-p9-jeos-systemd-20210802-aarch64.i
 ISO_STAGE2 := altinst
 ISO_REPLACE_PROPAGATOR := yes
 
-COMMON_ENV := KBUILD_OUTPUT='$(KBUILD_OUTPUT)' KBUILD_BUILD_TIMESTAMP=yyyyyyyyyyyyyyyyyyyyyyyyyyyyy DISTCC_BACKOFF_PERIOD=0 DISTCC_FALLBACK=0
+COMMON_ENV := KBUILD_OUTPUT='$(KBUILD_OUTPUT)' KBUILD_BUILD_TIMESTAMP='2018-01-31T19:05:00+04:00' DISTCC_BACKOFF_PERIOD=0 DISTCC_FALLBACK=0
 # Use distcc only (without ccache).
 # Note: compilation nodes must be defined in ~/.distcc/hosts
 ENV := env PATH='$(PATH_distcc)' $(COMMON_ENV)
