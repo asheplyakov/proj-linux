@@ -106,6 +106,7 @@
       when:
         - initramfs_generator is undefined
         - uefi_supported
+        - ansible_os_family != 'Debian'
 
     - set_fact:
         initramfs_generator: dracut
@@ -118,7 +119,6 @@
         initramfs_generator: initramfs_tools
       when:
         - initramfs_generator is undefined
-        - not(uefi_supported)
         - ansible_os_family == 'Debian'
 
     - name: create initramfs with initramfs-tools
